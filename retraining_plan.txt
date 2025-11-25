@@ -1,0 +1,25 @@
+MODEL RETRAINING PLAN
+=====================
+
+RECOMMENDED SCHEDULE: Quarterly (Every 3 months)
+
+IMMEDIATE ACTION REQUIRED:
+- Q1 2025 retrain is DUE NOW (March 2025)
+- Feature drift detected: flu beds (-61%), temperature (+89%)
+
+RETRAINING TRIGGERS:
+1. Performance: AUC drops >5% from baseline (0.96 -> 0.91)
+2. Feature Drift: Any feature shifts >30% from training mean
+3. Data Volume: New data >20% of training set
+4. Seasonal: Every 3 months
+5. Manual: Policy/operational changes
+
+MONITORING METRICS:
+- Weekly: Check AUC on rolling 30-day window
+- Monthly: Feature distribution comparison
+- Quarterly: Full model retrain + validation
+
+ROLLBACK CRITERIA:
+- New model AUC <0.94
+- Precision drops >10%
+- Feature importance shifts dramatically
