@@ -1,0 +1,83 @@
+import os
+import pandas as pd
+import numpy as np
+
+# Klasörleri oluştur
+os.makedirs("dags", exist_ok=True)
+os.makedirs("src", exist_ok=True)
+os.makedirs("data", exist_ok=True)
+
+# 1. Airflow DAG
+dag_code = """
+from airflow import DAG
+from airflow.operators.python import PythonOperator, BranchPythonOperator
+from airflow.operators.empty import EmptyOperator
+from datetime import datetime, timedelta
+import os
+import pandas as pd
+from src.enrich_features import add_calendar_features, add_nhs111_data
+from src.fetch_nhs111 import fetch_latest_nhs111
+
+# ... (Full DAG code would go here, simplified for file creation)
+def train_and_evaluate(**context):
+    print('Training model with enriched data...')
+
+with DAG(
+    dag_id='monthly_hospital_model_retrain',
+    schedule_interval='@monthly',
+    start_date=datetime(2024, 1, 1),
+    catchup=False,
+) as dag:
+    start = EmptyOperator(task_id='start')
+    # ... tasks ...
+"""
+
+with open("dags/monthly_hospital_model_retrain.py", "w") as f:
+    f.write(dag_code)
+
+# 2. Feature Enrichment Script
+enrich_code = """
+import pandas as pd
+import holidays
+
+def add_calendar_features(df):
+    \"\"\"Adds bank holiday and weekend flags.\"\"\"
+    uk_holidays = holidays.UnitedKingdom()
+    df['date'] = pd.to_datetime(df['date'])
+    df['is_bank_holiday'] = df['date'].apply(lambda d: 1 if d in uk_holidays else 0)
+    df['is_weekend'] = df['date'].dt.dayofweek.isin([5, 6]).astype(int)
+    return df
+
+def add_nhs111_data(df, nhs_df):
+    \"\"\"Joins NHS 111 call data to the main dataframe.\"\"\"
+    nhs_df['date'] = pd.to_datetime(nhs_df['date'])
+    df = df.merge(nhs_df, on='date', how='left')
+    return df
+"""
+
+with open("src/enrich_features.py", "w") as f:
+    f.write(enrich_code)
+
+# 3. NHS 111 Fetcher (Mock)
+fetch_code = """
+import pandas as pd
+import numpy as np
+
+def fetch_latest_nhs111(region='London'):
+    \"\"\"Simulates fetching NHS 111 data.
+    In production, replace this with a request to the NHS Digital API or CSV download.
+    \"\"\"
+    print(f'Fetching NHS 111 data for {region}...')
+    dates = pd.date_range(start='2024-01-01', periods=30)
+    data = {
+        'date': dates,
+        'calls_chest_pain': np.random.randint(50, 200, size=30),
+        'calls_fever': np.random.randint(100, 300, size=30)
+    }
+    return pd.DataFrame(data)
+"""
+
+with open("src/fetch_nhs111.py", "w") as f:
+    f.write(fetch_code)
+
+print("Created dags/monthly_hospital_model_retrain.py, src/enrich_features.py, src/fetch_nhs111.py")
