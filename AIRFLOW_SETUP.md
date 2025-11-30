@@ -1,191 +1,149 @@
-# Airflow MLOps Pipeline - Kurulum ve Çalıştırma
+# Airflow MLOps Pipeline - Setup and Deployment Guide
 
-Bu döküman, Hospital Capacity Prediction projesinin Airflow MLOps pipeline'ını nasıl başlatacağınızı ve kullanacağınızı açıklar.
+This document explains how to set up and run the Hospital Capacity Prediction Airflow MLOps pipeline.
 
-## Hızlı Başlangıç
+## Quick Start
 
-### 1. Gerekli Dizinleri Oluşturun
+### 1. Create Required Directories
 
 ```bash
 mkdir -p logs plugins config
 ```
 
-### 2. Airflow'u Başlatın
+### 2. Start Airflow
 
 ```bash
-# Tüm servisleri başlat
-docker-compose up -d
+# Start all services
+docker compose up -d
 
-# Logları izle (opsiyonel)
-docker-compose logs -f
+# Watch logs (optional)
+docker compose logs -f
 ```
 
-İlk başlatma 2-3 dakika sürebilir çünkü:
-- PostgreSQL ve Redis başlatılacak
-- Airflow database migration yapılacak
-- Admin kullanıcısı oluşturulacak
-- Python paketleri yüklenecek (scikit-learn, pandas, pytrends, vb.)
+First startup may take 2-3 minutes because:
+- PostgreSQL and Redis will initialize
+- Airflow database migration will run
+- Admin user will be created
+- Python packages will install (scikit-learn, pandas, pytrends, etc.)
 
-### 3. Web UI'ya Erişin
+### 3. Access Web UI
 
-Tarayıcıda açın: http://localhost:8080
+Open in browser: http://localhost:8080
 
-**Giriş bilgileri:**
+**Login credentials:**
 - Username: `airflow`
 - Password: `airflow`
 
-### 4. DAG'ları Aktifleştirin
+### 4. Activate DAGs
 
-Web UI'da:
-1. "DAGs" sekmesine gidin
-2. İki DAG göreceksiniz:
-   - `hospital_capacity_monthly_retrain` - Gerçek NHS verisiyle aylık yeniden eğitim
-   - `monthly_hospital_model_retrain` - Zenginleştirilmiş özelliklerle eğitim
-3. Her birinin solundaki toggle'ı aktif edin
+In the Web UI:
+1. Go to "DAGs" tab
+2. Find `hospital_capacity_production` DAG
+3. Toggle the switch on the left to activate it
 
-## Mevcut DAG'lar
+## Available DAGs
 
-### 1. hospital_capacity_monthly_retrain
+### hospital_capacity_production
 
-**Zamanlama:** Ayda bir (Her ayın 1'inde saat 02:00)
+**Schedule:** Monthly (1st day of month at 2:00 AM)
 
-**İş akışı:**
+**Workflow:**
 ```
-start → fetch_hospital_data ┐
-        fetch_weather_data   ├→ prepare_data → train_model → evaluate_and_decide
-        fetch_trends_data   ┘                                      ↓
-                                                              promote / skip
-                                                                    ↓
-                                                            send_notification → end
+start → check_data → train_model → evaluate_and_decide
+                                          ↓
+                                    promote / skip
+                                          ↓
+                                       notify → end
 ```
 
-**Ne yapar:**
-- NHS hospital data, hava durumu ve Google Trends verilerini çeker
-- Verileri birleştirir ve zenginleştirir
-- Aday model eğitir (XGBoost)
-- Mevcut üretim modeliyle karşılaştırır
-- AUC ≥ 0.70 ve min %1 iyileşme varsa terfi ettirir
+**What it does:**
+- Validates that required data files exist
+- Trains candidate model with latest data
+- Compares with current production model
+- Promotes if AUC ≥ 0.70 and min 1% improvement
+- Logs metrics and sends notifications
 
-### 2. monthly_hospital_model_retrain
+## Manual Execution
 
-**Zamanlama:** Ayda bir (@monthly)
+### From Web UI
 
-**İş akışı:**
-```
-start → fetch_external_data → prepare_training_data → train_candidate
-                                                            ↓
-                                                   evaluate_and_branch
-                                                      ↙         ↘
-                                            promote_model    skip_promotion
-                                                      ↘         ↙
-                                                         end
-```
+1. Click on the DAG
+2. Click "Trigger DAG" button in top right
+3. Monitor task status in "Graph" view
 
-**Ne yapar:**
-- NHS 111 call data çeker
-- Takvim, hava kalitesi ve NHS 111 özellikleriyle zenginleştirir
-- Aday model eğitir
-- AUC ≥ 0.94 ve min %0.5 iyileşme varsa terfi ettirir
-
-## Manuel Çalıştırma
-
-### Web UI'dan
-
-1. DAG'a tıklayın
-2. Sağ üstte "Trigger DAG" butonuna basın
-3. "Graph" görünümünden task'ların durumunu izleyin
-
-### CLI'dan
+### From CLI
 
 ```bash
-# Container'a girin
-docker-compose exec airflow-scheduler bash
+# Enter the container
+docker exec -it hospital-capacity-prediction-airflow-scheduler-1 bash
 
-# DAG'ı manuel tetikle
-airflow dags trigger hospital_capacity_monthly_retrain
+# Manually trigger DAG
+airflow dags trigger hospital_capacity_production
 
-# DAG durumunu kontrol et
+# Check DAG status
 airflow dags list
 
-# Task loglarını görüntüle
-airflow tasks logs hospital_capacity_monthly_retrain train_model <execution_date>
+# View task logs
+airflow tasks logs hospital_capacity_production train_model <execution_date>
 ```
 
-## Servis Yönetimi
+## Service Management
 
 ```bash
-# Tüm servisleri durdur
-docker-compose down
+# Stop all services
+docker compose down
 
-# Servisleri yeniden başlat
-docker-compose restart
+# Restart services
+docker compose restart
 
-# Sadece belirli bir servisi yeniden başlat
-docker-compose restart airflow-scheduler
+# Restart specific service
+docker compose restart airflow-scheduler
 
-# Container'ları ve volume'ları tamamen sil (dikkat!)
-docker-compose down -v
-```
-
-## Standalone Test (Airflow olmadan)
-
-DAG'ları Airflow olmadan test edebilirsiniz:
-
-```bash
-# İlk DAG'ı test et
-python dags/hospital_capacity_dag.py
-
-# İkinci DAG'ı test et
-python dags/monthly_hospital_model_retrain.py
-
-# retrain_real.py script'i de kullanılabilir
-python retrain_real.py                    # Tam pipeline
-python retrain_real.py --status           # Durum kontrolü
-python retrain_real.py --prepare-only     # Sadece veri hazırlama
-python retrain_real.py --train-only       # Sadece eğitim
+# Remove containers and volumes (warning: data loss!)
+docker compose down -v
 ```
 
 ## Troubleshooting
 
-### DAG'lar görünmüyor
+### DAGs not showing up
 
 ```bash
-# DAG'ları tara
-docker-compose exec airflow-scheduler airflow dags list
+# List DAGs
+docker exec hospital-capacity-prediction-airflow-scheduler-1 airflow dags list
 
-# DAG parse hatalarını kontrol et
-docker-compose exec airflow-scheduler airflow dags list-import-errors
+# Check DAG parse errors
+docker exec hospital-capacity-prediction-airflow-scheduler-1 airflow dags list-import-errors
 ```
 
-### Import hataları
+### Import errors
 
 ```bash
-# Container içinde Python path'i kontrol et
-docker-compose exec airflow-scheduler python -c "import sys; print('\n'.join(sys.path))"
+# Check Python path in container
+docker exec hospital-capacity-prediction-airflow-scheduler-1 python -c "import sys; print('\n'.join(sys.path))"
 
-# src modülünün erişilebilir olduğunu doğrula
-docker-compose exec airflow-scheduler ls -la /opt/airflow/src
+# Verify src module is accessible
+docker exec hospital-capacity-prediction-airflow-scheduler-1 ls -la /opt/airflow/src
 ```
 
-### Task'lar başarısız oluyor
+### Task failures
 
 ```bash
-# Task log dosyalarını görüntüle
-docker-compose logs airflow-scheduler | grep ERROR
+# View scheduler error logs
+docker compose logs airflow-scheduler | grep ERROR
 
-# Specific task logunu görüntüle
-docker-compose exec airflow-scheduler cat /opt/airflow/logs/hospital_capacity_monthly_retrain/train_model/<date>/<try>.log
+# View specific task log
+docker exec hospital-capacity-prediction-airflow-scheduler-1 cat /opt/airflow/logs/dag_id=hospital_capacity_production/run_id=*/task_id=train_model/attempt=1.log
 ```
 
-### Veri dosyaları bulunamıyor
+### Data files not found
 
 ```bash
-# Volume mapping'leri kontrol et
-docker-compose exec airflow-scheduler ls -la /opt/airflow/
-docker-compose exec airflow-scheduler ls -la /opt/airflow/data/
-docker-compose exec airflow-scheduler ls -la /opt/airflow/models/
+# Check volume mappings
+docker exec hospital-capacity-prediction-airflow-scheduler-1 ls -la /opt/airflow/
+docker exec hospital-capacity-prediction-airflow-scheduler-1 ls -la /opt/airflow/data/
+docker exec hospital-capacity-prediction-airflow-scheduler-1 ls -la /opt/airflow/models/
 
-# Eğer dosyalar yoksa, host'tan kopyala
+# If files missing, copy from host
 docker cp Fact_GA_Beds.csv <container_id>:/opt/airflow/
 ```
 
@@ -193,65 +151,104 @@ docker cp Fact_GA_Beds.csv <container_id>:/opt/airflow/
 
 ### Metrics Log
 
-Model performansını takip edin:
+Track model performance over time:
 
 ```bash
 cat models/metrics_log.csv
 ```
 
-Sütunlar:
-- `timestamp`: Değerlendirme zamanı
-- `candidate_auc`: Aday model AUC'si
-- `production_auc`: Üretim model AUC'si
-- `promoted`: Terfi edildi mi? (True/False)
-- `improvement`: İyileşme miktarı
+Columns:
+- `timestamp`: Evaluation time
+- `candidate_auc`: Candidate model AUC score
+- `production_auc`: Production model AUC score
+- `promoted`: Was the model promoted? (True/False)
 
 ### Airflow Flower (Celery Monitoring)
 
 ```bash
-# Flower'ı başlat
-docker-compose --profile flower up -d
+# Start Flower
+docker compose --profile flower up -d
 
-# Erişim
-# http://localhost:5555
+# Access at http://localhost:5555
 ```
 
-## Dosya Yapısı
+## Directory Structure
 
 ```
 .
 ├── dags/
-│   ├── hospital_capacity_dag.py           # Ana DAG (gerçek veri)
-│   └── monthly_hospital_model_retrain.py  # Zenginleştirilmiş DAG
-├── src/
-│   ├── data_preparation.py                # Veri hazırlama
-│   ├── training.py                        # Model eğitimi
-│   ├── evaluation.py                      # Model değerlendirme
-│   └── enrich_features.py                 # Özellik zenginleştirme
+│   ├── hospital_capacity_production.py  # Main production pipeline
+│   ├── hospital_capacity_simple.py      # Simplified test DAG
+│   └── test_dag.py                      # Basic test DAG
 ├── data/
-│   ├── training_data_real.csv             # Hazırlanmış eğitim verisi
-│   └── hospital_capacity_enriched.csv     # Zenginleştirilmiş veri
+│   ├── training_data_real.csv           # Processed training data
+│   ├── Fact_GA_Beds.csv                 # General & Acute beds
+│   ├── Fact_Flu_Beds.csv                # Flu beds data
+│   └── Fact_CC_Adult.csv                # Critical Care data
 ├── models/
-│   ├── candidate_model.pkl                # Aday model
-│   ├── production_model.pkl               # Üretim modeli
-│   └── metrics_log.csv                    # Metrik geçmişi
-├── logs/                                  # Airflow log'ları
-├── docker-compose.yaml                    # Airflow servisleri
-└── retrain_real.py                        # Standalone script
+│   ├── candidate_model.pkl              # Candidate model
+│   ├── production_model.pkl             # Production model
+│   └── metrics_log.csv                  # Metrics history
+├── logs/                                # Airflow execution logs
+├── docker-compose.yaml                  # Airflow services configuration
+└── README.md                            # Project documentation
 ```
 
-## Production Notları
+## Production Deployment Notes
 
-**Güvenlik:**
-- Default şifreleri değiştirin
-- `AIRFLOW__CORE__FERNET_KEY` ayarlayın
-- Email notification için SMTP konfigürasyonu yapın
+**Security:**
+- Change default passwords
+- Set `AIRFLOW__CORE__FERNET_KEY`
+- Configure SMTP for email notifications
+- Use secrets management (e.g., AWS Secrets Manager, HashiCorp Vault)
 
-**Ölçeklendirme:**
-- Worker sayısını artırın: `docker-compose up -d --scale airflow-worker=3`
-- Postgres ve Redis için production-grade configuration kullanın
+**Scaling:**
+- Increase worker count: `docker compose up -d --scale airflow-worker=3`
+- Use production-grade Postgres and Redis configurations
+- Consider managed Airflow (e.g., AWS MWAA, Google Cloud Composer)
 
 **Monitoring:**
-- Prometheus/Grafana entegrasyonu ekleyin
-- Log aggregation (ELK Stack) kurun
-- Alert'ler için PagerDuty/Slack webhook'ları ayarlayın
+- Add Prometheus/Grafana integration
+- Set up log aggregation (ELK Stack)
+- Configure alerts via PagerDuty/Slack webhooks
+- Monitor model drift metrics
+
+## Database Integration (Hospital Deployment)
+
+When deploying to a hospital environment, connect to their HIS (Hospital Information System) database:
+
+### Configure Connection
+
+In Airflow UI → Admin → Connections:
+
+```
+Connection ID: hospital_db
+Connection Type: Postgres (or mssql/oracle)
+Host: hospital-db.internal
+Schema: clinical_data
+Login: airflow_readonly
+Password: ***
+Port: 5432
+```
+
+### Modify DAG to Use SQL
+
+Update `dags/hospital_capacity_production.py`:
+
+```python
+from airflow.providers.postgres.hooks.postgres import PostgresHook
+
+def extract_hospital_data(**context):
+    hook = PostgresHook(postgres_conn_id="hospital_db")
+
+    sql = """
+        SELECT date, ward, beds_available, beds_occupied
+        FROM bed_occupancy
+        WHERE date >= CURRENT_DATE - INTERVAL '30 days'
+    """
+
+    df = hook.get_pandas_df(sql)
+    # Continue with feature engineering...
+```
+
+This eliminates the need for CSV files and enables real-time predictions with live hospital data.
