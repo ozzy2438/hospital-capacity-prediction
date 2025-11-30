@@ -1,6 +1,7 @@
 # Hospital Capacity Prediction - Early Warning System
 
 An intelligent early warning system that predicts hospital bed occupancy 3 days in advance with 99%+ accuracy, enabling proactive resource management and preventing capacity crises.
+https://github.com/ozzy2438/hospital-capacity-prediction/blob/a5646aa1223f58d1ec8bdc09639dcac891e6a67e/images/Gemini_Generated_Image_h3i6kfh3i6kfh3i6.png
 
 ## Problem & Context
 
